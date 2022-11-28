@@ -1,0 +1,99 @@
+apiVersion: karpenter.sh/v1alpha5
+kind: Provisioner
+metadata:
+  name: platform-engineering
+spec:
+  taints:
+    - key: node-pool
+      value: platform-engineering
+      effect: NoSchedule
+  labels:
+    node-pool: platform-engineering
+  requirements:
+    - key: karpenter.k8s.aws/instance-category
+      operator: In
+      values: ["c","m"]
+    - key: karpenter.k8s.aws/instance-size
+      operator: In
+      values: ["large","xlarge"]
+    - key: topology.kubernetes.io/zone
+      operator: In
+      values: ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+    - key: kubernetes.io/arch
+      operator: In
+      values: ["amd64"]
+  providerRef:
+    name: platform-engineering
+  limits:
+    resources:
+      cpu: 100
+      memory: 100Gi
+---
+apiVersion: karpenter.k8s.aws/v1alpha1
+kind: AWSNodeTemplate
+metadata:
+  name: platform-engineering
+spec:
+  subnetSelector:                             # required
+    karpenter.sh/discovery: {{ .Values.clusterName }}
+  securityGroupSelector:                       # required, when not using launchTemplate
+    karpenter.sh/discovery: {{ .Values.clusterName }}
+  instanceProfile: {{ .Values.instanceProfile }}          # optional, if already set in controller args
+  amiFamily: AL2
+  tags:
+    team: platform-engineering                # optional, add tags for your own use
+---
+# NodeSelector "node-pool=platform-engineering" is assigned
+# to pods with the label "node-pool=platform-engineering"
+apiVersion: mutations.gatekeeper.sh/v1beta1
+kind: Assign
+metadata:
+  name: nodepool-selector-platform-engineering
+  namespace: gatekeeper-system
+spec:
+  applyTo:
+    - groups: [""]
+      kinds: ["Pod"]
+      versions: ["v1"]
+  match:
+    scope: Namespaced
+    kinds:
+      - apiGroups: ["*"]
+        kinds: ["Pod"]
+    labelSelector:
+      matchLabels:
+        node-pool: platform-engineering
+  location: "spec.nodeSelector"
+  parameters:
+    assign:
+      value:
+        node-pool: "platform-engineering"
+---
+# Toleration "node-pool=platform-engineering" is assigned
+# to pods with the label "node-pool=platform-engineering"
+apiVersion: mutations.gatekeeper.sh/v1beta1
+kind: Assign
+metadata:
+  name: nodepool-toleration-platform-engineering
+  namespace: gatekeeper-system
+spec:
+  applyTo:
+    - groups: [""]
+      kinds: ["Pod"]
+      versions: ["v1"]
+  match:
+    scope: Namespaced
+    kinds:
+    - apiGroups: ["*"]
+      kinds: ["Pod"]
+    labelSelector:
+      matchLabels:
+        node-pool: platform-engineering
+  location: "spec.tolerations"
+  parameters:
+    assign:
+      value:
+        - key: "node-pool"
+          operator: "Equal"
+          value: "platform-engineering"
+---
